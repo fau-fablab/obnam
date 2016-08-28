@@ -217,7 +217,12 @@ class CheckForExtraChunks(WorkItem):
                     # removed. However, some day fsck needs to be able
                     # to drop stuff, so leaving the commented-out call
                     # to remove_chunk here, as a marker.
-                    # self.repo.remove_chunk(chunkid)
+                    if self.repo.format == '6':
+                        self.repo._remove_chunk(chunkid)
+                    else:
+                        self.warning('deleting chunks is not yet supported'
+                                     ' for repo format %s' % self.repo.format)
+                        # self.repo._remove_chunk(chunkid)
                 else:
                     self.error('chunk %s not used by anyone' % chunkid)
 
