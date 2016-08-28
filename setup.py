@@ -139,6 +139,7 @@ class Check(Command):
         ('lock-tests', 'l', 'run lock tests locally?'),
         ('network-lock-tests', 'L', 'run lock tests against localhost?'),
         ('crash-tests', 'c', 'run crash tests?'),
+        ('fsck-tests', 'f', 'run fsck tests?'),
         ('sftp-tests', 's', 'run sftp tests against localhost?'),
         ('nitpick', 'n', 'check copyright statements, line lengths, etc'),
     ]
@@ -150,6 +151,7 @@ class Check(Command):
         self.lock_tests = new_value
         self.network_lock_tests = new_value
         self.crash_tests = new_value
+        self.fsck_tests = new_value
         self.sftp_tests = new_value
         self.nitpick = new_value
 
@@ -164,6 +166,7 @@ class Check(Command):
             self.lock_tests or
             self.network_lock_tests or
             self.crash_tests or
+            self.fsck_tests or
             self.sftp_tests or
             self.nitpick)
         if not any_set:
@@ -187,6 +190,9 @@ class Check(Command):
 
         if self.lock_tests:
             self.run_lock_test(num_clients, num_generations)
+
+        if self.fsck_tests:
+            self.run_fsck_test()
 
         if self.network_lock_tests:
             self.run_network_lock_test(num_clients, num_generations)
