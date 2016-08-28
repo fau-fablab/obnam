@@ -1,0 +1,11 @@
+sudo: required
+
+services:
+  - docker
+
+script:
+ - docker build -t obnam .
+# --privileged is needed because FUSE in docker doesn't work otherwise
+# -it may be added to get more output (like on an interactive terminal)
+# to see if a certain test hangs forever
+ - docker run --privileged --rm  obnam
