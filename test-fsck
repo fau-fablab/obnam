@@ -1,0 +1,59 @@
+#!/bin/bash
+# Copyright 2016 Max Gaukler
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+
+set -eu
+set -x
+
+# test that fsck can fix unused items and other stuff that occurs when randomly
+# aborting a backup.
+
+# setup repo R and data L
+tempdir="$(mktemp -d)"
+mkdir $tempdir/R $tempdir/L
+R=$tempdir/R
+L=$tempdir/L
+
+# backup and fsck
+genbackupdata --create=1337 $L
+obnam --root=$L --repository=$R backup
+obnam --root=$L --repository=$R fsck
+
+# Kill obnam backup after 1 second.
+# The interrupted backup leaves behind unused chunks and other errors.
+# Killing causes errors that are more severe compared to the ones produced with
+# the --crash-limit option.
+genbackupdata --create=13371337 $L
+(! timeout 1 obnam --root=$L --repository=$R backup)
+# force unlock
+obnam --root=$L --repository=$R force-lock
+
+output=`mktemp`
+# fsck must find something
+(! obnam --root=$L --repository=$R fsck --quiet)
+# have fsck fix the errors
+obnam --root=$L --repository=$R fsck --fsck-fix --fsck-rm-unused 2>&1 \
+    | tee $tempdir/out1
+# errors are reported, esp. unused chunks
+grep -q 'chunk [0-9]* not used by anyone' $tempdir/out1
+
+obnam --root=$L --repository=$R fsck 2>&1 | tee $tempdir/out2
+# unused chunks must have been removed
+(! grep -q 'chunk [0-9]* not used by anyone' $tempdir/out2)
+
+echo "success"
+rm -r $tempdir
