@@ -18,6 +18,8 @@
 
 set -eu
 set -x
+# required: make pipes return false if something fails inbetween
+set -o pipefail
 
 # test that fsck can fix unused items and other stuff that occurs when randomly
 # aborting a backup.
@@ -27,9 +29,11 @@ tempdir="$(mktemp -d)"
 mkdir $tempdir/R $tempdir/L
 R=$tempdir/R
 L=$tempdir/L
+L_stage1=$tempdir/L_stage1
 
 # backup and fsck
-genbackupdata --create=1337 $L
+genbackupdata --create=1234 $L
+cp -a $L $L_stage1
 obnam --root=$L --repository=$R backup
 obnam --root=$L --repository=$R fsck
 
@@ -37,32 +41,39 @@ obnam --root=$L --repository=$R fsck
 # The interrupted backup leaves behind unused chunks and other errors.
 # Killing causes errors that are more severe compared to the ones produced with
 # the --crash-limit option.
-genbackupdata --create=13371337 $L
-(! timeout 1 obnam --root=$L --repository=$R backup)
+genbackupdata --create=123456789 $L
+(! timeout 3 obnam --root=$L --repository=$R --checkpoint=1234567 backup)
 # force unlock
 obnam --root=$L --repository=$R force-lock
 
-output=`mktemp`
 # fsck must find something
-(! obnam --root=$L --repository=$R fsck --quiet)
-# have fsck fix the errors
+(! obnam --root=$L --repository=$R fsck)
+# have fsck fix the errors. may return failure or not.
 obnam --root=$L --repository=$R fsck --fsck-fix --fsck-rm-unused 2>&1 \
-    | tee $tempdir/out1
+    | tee $tempdir/out1 || true
 # errors are reported, esp. unused chunks
 grep -q 'chunk [0-9]* not used by anyone' $tempdir/out1
 
-# try to restore, if files are restored, they must be identical copies 
-$RESTORE=$tempdir/RESTORE
-mkdir $RESTORE
-obnam --repository=$R --to=$RESTORE restore
-function files_in_1_are_subset_of_2() {
-	(cd $1 && find . -type f | xargs --replace cmp {} $2/{})
-}
-files_in_1_are_subset_of_2 $RESTORE $L
-
+# fsck must be happy
 obnam --root=$L --repository=$R fsck 2>&1 | tee $tempdir/out2
 # unused chunks must have been removed
 (! grep -q 'chunk [0-9]* not used by anyone' $tempdir/out2)
+
+# try to restore, if files are restored, they must be identical copies 
+RESTORE=$tempdir/RESTORE
+mkdir $RESTORE
+obnam --repository=$R --root=$L --to=$RESTORE restore
+function files_in_1_are_subset_of_2() {
+	(cd $1 && find . -type f | tee - | xargs --replace echo cmp {} $2/{})
+}
+function trees_equal() {
+	files_in_1_are_subset_of_2 $1 $2 && files_in_1_are_subset_of_2 $2 $1
+}
+# files must either be from before or from at the interrupted backup, but must not magically appear.
+# TODO may this be trees_equal at some points?
+files_in_1_are_subset_of_2 $RESTORE/$L $L || files_in_1_are_subset_of_2 $RESTORE/$L $L_stage1
+
+
 
 echo "success"
 rm -r $tempdir
