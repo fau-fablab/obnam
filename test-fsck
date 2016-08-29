@@ -51,6 +51,15 @@ obnam --root=$L --repository=$R fsck --fsck-fix --fsck-rm-unused 2>&1 \
 # errors are reported, esp. unused chunks
 grep -q 'chunk [0-9]* not used by anyone' $tempdir/out1
 
+# try to restore, if files are restored, they must be identical copies 
+$RESTORE=$tempdir/RESTORE
+mkdir $RESTORE
+obnam --repository=$R --to=$RESTORE restore
+function files_in_1_are_subset_of_2() {
+	(cd $1 && find . -type f | xargs --replace cmp {} $2/{})
+}
+files_in_1_are_subset_of_2 $RESTORE $L
+
 obnam --root=$L --repository=$R fsck 2>&1 | tee $tempdir/out2
 # unused chunks must have been removed
 (! grep -q 'chunk [0-9]* not used by anyone' $tempdir/out2)
