@@ -251,6 +251,10 @@ class Check(Command):
         print "run sftp tests"
         runcmd(['./test-sftpfs'])
 
+    def run_fsck_test(self):
+        print "run fsck tests"
+        runcmd(['./test-fsck'])
+
     def run_nitpick_checks(self):
         self.check_with_pep8()
         self.check_with_pylint()
