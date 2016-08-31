@@ -32,46 +32,84 @@ L=$tempdir/L
 L_stage1=$tempdir/L_stage1
 
 # backup and fsck
-genbackupdata --create=1234 $L
+# datasize of first backup
+START_DATASIZE=1234
+# errors seem to sometimes disappear if this number is too high:
+# TODO -> still unclear.
+#START_DATASIZE=123456789
+genbackupdata --create=$START_DATASIZE $L
 cp -a $L $L_stage1
 obnam --root=$L --repository=$R backup
 obnam --root=$L --repository=$R fsck
 
-# Kill obnam backup after 1 second.
+# Kill obnam backup after a short time
 # The interrupted backup leaves behind unused chunks and other errors.
 # Killing causes errors that are more severe compared to the ones produced with
 # the --crash-limit option.
 genbackupdata --create=123456789 $L
-(! timeout 3 obnam --root=$L --repository=$R --checkpoint=1234567 backup)
+TIMEOUT=3
+# for triggering "whole file checksum" errors
+# CHECKPOINT="--checkpoint=104857"
+# for triggerung "unused chunk" errors:
+CHECKPOINT="--checkpoint=99999999999999999999999999999"
+(! timeout $TIMEOUT obnam --root=$L --repository=$R $CHECKPOINT backup)
 # force unlock
 obnam --root=$L --repository=$R force-lock
 
-# fsck must find something
-(! obnam --root=$L --repository=$R fsck)
-# have fsck fix the errors. may return failure or not.
-obnam --root=$L --repository=$R fsck --fsck-fix --fsck-rm-unused 2>&1 \
-    | tee $tempdir/out1 || true
-# errors are reported, esp. unused chunks
-grep -q 'chunk [0-9]* not used by anyone' $tempdir/out1
+obnam --root=$L --repository=$R generations
 
-# fsck must be happy
-obnam --root=$L --repository=$R fsck 2>&1 | tee $tempdir/out2
-# unused chunks must have been removed
-(! grep -q 'chunk [0-9]* not used by anyone' $tempdir/out2)
+# fsck must find something
+if ! obnam --root=$L --repository=$R fsck; then
+	echo "fsck found something, we let it fix that before restore"
+	# have fsck fix the errors. may return failure or not.
+	obnam --root=$L --repository=$R fsck --fsck-fix --fsck-rm-unused 2>&1 \
+	| tee $tempdir/out1 || true
+	# errors may be reported, esp. unused chunks
+	# grep -q 'chunk [0-9]* not used by anyone' $tempdir/out1
+fi
+
 
 # try to restore, if files are restored, they must be identical copies 
 RESTORE=$tempdir/RESTORE
 mkdir $RESTORE
-obnam --repository=$R --root=$L --to=$RESTORE restore
-function files_in_1_are_subset_of_2() {
-	(cd $1 && find . -type f | tee - | xargs --replace echo cmp {} $2/{})
+obnam --repository=$R --root=$L --to=$RESTORE restore || echo "Obnam restore returned failure. Still testing the outcome."
+function files_in_1_are_in_2_or_3() {
+    # return 0 if each file in $1 has an identical copy in $2 or $3
+    # 1 otherwise.
+    # $3 may be an empty string
+    # meta-information and empty directories ignored
+    # mathematically, return ($1 is a subset of union($2, $3))
+    pushd $1 > /dev/null
+    for f in $(find . -type f); do
+        cmp $f $2/$f || { [-z $3] && cmp $f $3/$f; } || return 1;
+    done
+    popd > /dev/null
+    return 0
+}
+
+# files must either be from the earlier backup
+# or a part of the tree of the interrupted backup,
+# but mustn't be corrupted or magically appear from nowhere
+files_in_1_are_in_2_or_3 $RESTORE/$L $L $L_stage1
+
+# fsck must be happy
+(obnam --root=$L --repository=$R fsck 2>&1 | tee $tempdir/out2) || { echo "ERROR fsck could not fix errors"; exit 1; }
+# unused chunks must have been removed
+(! grep -q 'chunk [0-9]* not used by anyone' $tempdir/out2)
+
+
+# these functions will be needed later for more checks
+function files_in_1_are_in_2 {
+    # return 0 if every file in $1 has an identical copy in $2
+    # 1 oterwise
+    # meta-information and empty directories ignored
+    files_in_1_are_in_2_or_3 $1 $2 ""
 }
 function trees_equal() {
-	files_in_1_are_subset_of_2 $1 $2 && files_in_1_are_subset_of_2 $2 $1
+    # return 0 if the file trees $1 and $2 match in content
+    # meta-information and empty directories ignored
+    files_in_1_are_in_2 $1 $2 && files_in_1_are_subset_of_2 $2 $1
 }
-# files must either be from before or from at the interrupted backup, but must not magically appear.
-# TODO may this be trees_equal at some points?
-files_in_1_are_subset_of_2 $RESTORE/$L $L || files_in_1_are_subset_of_2 $RESTORE/$L $L_stage1
 
 
 
