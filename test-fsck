@@ -60,19 +60,20 @@ obnam --root=$L --repository=$R generations
 
 # fsck must find something
 if ! obnam --root=$L --repository=$R fsck; then
-	echo "fsck found something, we let it fix that before restore"
-	# have fsck fix the errors. may return failure or not.
-	obnam --root=$L --repository=$R fsck --fsck-fix --fsck-rm-unused 2>&1 \
-	| tee $tempdir/out1 || true
-	# errors may be reported, esp. unused chunks
-	# grep -q 'chunk [0-9]* not used by anyone' $tempdir/out1
+    echo "fsck found something, we let it fix that before restore"
+    # have fsck fix the errors. may return failure or not.
+    obnam --root=$L --repository=$R fsck --fsck-fix --fsck-rm-unused 2>&1 \
+    | tee $tempdir/out1 || true
+    # errors may be reported, esp. unused chunks
+    # grep -q 'chunk [0-9]* not used by anyone' $tempdir/out1
 fi
 
 
 # try to restore, if files are restored, they must be identical copies 
 RESTORE=$tempdir/RESTORE
 mkdir $RESTORE
-obnam --repository=$R --root=$L --to=$RESTORE restore || echo "Obnam restore returned failure. Still testing the outcome."
+obnam --repository=$R --root=$L --to=$RESTORE restore || \
+    echo "Obnam restore returned failure. Still testing the outcome."
 function files_in_1_are_in_2_or_3() {
     # return 0 if each file in $1 has an identical copy in $2 or $3
     # 1 otherwise.
@@ -93,7 +94,8 @@ function files_in_1_are_in_2_or_3() {
 files_in_1_are_in_2_or_3 $RESTORE/$L $L $L_stage1
 
 # fsck must be happy
-(obnam --root=$L --repository=$R fsck 2>&1 | tee $tempdir/out2) || { echo "ERROR fsck could not fix errors"; exit 1; }
+(obnam --root=$L --repository=$R fsck 2>&1 | tee $tempdir/out2) || \
+    { echo "ERROR fsck could not fix errors"; exit 1; }
 # unused chunks must have been removed
 (! grep -q 'chunk [0-9]* not used by anyone' $tempdir/out2)
 
